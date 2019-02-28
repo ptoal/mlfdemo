@@ -1,0 +1,44 @@
+---
+# tasks file for sage905.unixlogins
+
+- name: Include OS-specific variables.
+  include_vars: "{{ ansible_os_family }}.yml"
+
+- name: Create Groups
+  group: name={{ item.key }} gid={{ item.value.gid|default(omit) }} state={{ item.value.state }}
+  with_dict: "{{ unixlogins.groups }}"
+
+- name: Create Users
+  user:
+    name: "{{ item.name }}"
+    comment: "{{ item.comment }}"
+    createhome: "{{ item.createhome }}"
+    uid: "{{ item.uid|default(omit) }}"
+    groups: "{{ item.groups | join(',') }}"
+    home: "{{ item.home }}"
+    shell: "{{ item.shell }}"
+    # NOTE! THIS SHOULD BE IN A VAULT
+    password: "{{ passwords[item.name] }}"
+  with_items: "{{ unixlogins.users }}"
+
+- name: Install authorized_keys
+  no_log: true
+  authorized_key: user="{{ item.0.name }}" key="{{ item.1 }}"
+  with_subelements:
+    - "{{ unixlogins.users }}"
+    - authorized_keys
+    - skip_missing: true
+
+- name: Install sudo for admins group
+  lineinfile: >
+    dest={{ sudoers_file }}
+    regexp="%admins ALL"
+    line="%admins ALL=(ALL) NOPASSWD: ALL"
+    state=present
+
+- name: Allow staff to sudo to mc user
+  lineinfile: >
+    dest={{ sudoers_file }}
+    line="%pwnstaff ALL=(mc) NOPASSWD: /bin/bash"
+    state=present
+
